@@ -1,6 +1,7 @@
 import typing as tp
 import torch
 import torch.nn as nn
+from torchtyping import TensorType
 
 
 def _ceil_int_div(n: int, m: int) -> int:
@@ -55,7 +56,7 @@ class MaskedConv2d(nn.Conv2d):
             "see the paper, section 3.4, for details"
         )
         if mask_type == "b":
-            raise NotImplementedError
+            raise NotImplementedError("ay yo, chill")
 
         self.register_buffer(
             "mask", _make_mask_a(out_channels, in_channels, kernel_size)
@@ -68,6 +69,52 @@ class MaskedConv2d(nn.Conv2d):
             return self.mask * grad
 
         self.weight.register_hook(apply_mask)
+
+
+# TODO: fix this wtf
+batch = height = width = hidden = channels = None
+
+
+class ConvLSTMCell(nn.Module):
+    in_channels: int
+    out_channels: int
+
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int) -> None:
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        # TODO: these should be MaskedConv1d
+        self.K_ss = nn.Conv1d(
+            out_channels, 4 * out_channels, kernel_size, padding="same"
+        )
+        self.K_is = nn.Conv1d(
+            in_channels, 4 * out_channels, kernel_size, padding="same"
+        )
+
+    def forward(
+        self,
+        input: TensorType["batch", "in_channels", "width"],
+        hidden_state: tuple[
+            TensorType["batch", "out_channels", "width"],
+            TensorType["batch", "out_channels", "width"],
+        ],
+    ) -> tuple[
+        TensorType["batch", "out_channels", "width"],
+        TensorType["batch", "out_channels", "width"],
+    ]:
+        # NOTE: variable names are terrible, see paper equations
+        prev_h, prev_c = hidden_state
+        o, f, i, g = (
+            activation(chunk)
+            for activation, chunk in zip(
+                (*(torch.sigmoid,) * 3, torch.tanh),
+                torch.chunk(self.K_ss(prev_h) + self.K_is(input), chunks=4, dim=1),
+            )
+        )
+        next_c = f * prev_c + i * g
+        next_h = o * torch.tanh(next_c)
+        return next_h, next_c
 
 
 class ConvLSTM(nn.Module):

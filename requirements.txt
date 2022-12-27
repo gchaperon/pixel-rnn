@@ -3,3 +3,5 @@ torch==1.13.0
 torchvision==0.14.0
 
 -e .
+torchtyping==0.1.4
+typeguard==2.13.3
